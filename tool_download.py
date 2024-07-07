@@ -1,5 +1,9 @@
 # import requests
-from urllib.parse import urlencode
+from urllib.parse import unquote
+import re
+import os
+import requests
+from ftfy import fix_encoding
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -8,7 +12,35 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import time
 
-def get_youtube_url(name):
+def sanitize_filename(filename):
+    """
+    Remove or replace invalid characters from the filename.
+    """
+    return re.sub(r'[<>:"/\\|?*]', '_', filename)
+
+def get_filename_from_cd(cd):
+    """
+    Get filename from content-disposition and handle encoding issues.
+    """
+    if not cd:
+        return None
+    # Find the filename in the content-disposition header
+    fname = re.findall(r'filename\*=([^;]+)', cd)
+    if len(fname) == 0:
+        fname = re.findall(r'filename="?([^"]+)"?', cd)
+        if len(fname) == 0:
+            return None
+        return fname[0]
+    
+    # Handle the case where the filename is encoded
+    fname = fname[0]
+    if 'UTF-8' in fname:
+        fname = fname.split("''")[-1]
+        fname = unquote(fname)
+    fname = fix_encoding(fname)
+    return fname
+
+def get_youtube_url(name, save_folder):
 
     driver = webdriver.Chrome()
 
@@ -26,6 +58,7 @@ def get_youtube_url(name):
     )
 
     video_url = video_element.get_attribute('href')
+    video_title = sanitize_filename(video_element.get_attribute('title') + ".mp3")
     print(f'URL of the first video: {video_url}')
 
     downloader_url = "https://yt1ss.pro/eu158/"
@@ -39,7 +72,20 @@ def get_youtube_url(name):
     time.sleep(3)
     btn_download = driver.find_element(By.ID, "A_downloadUrl")
     download_url = btn_download.get_attribute("href")
-    print(download_url)
+    print("URL to download", download_url)
+    response = requests.get(download_url, stream=True)
 
-get_youtube_url("Rap Viet mua 1")
+    response.raise_for_status()
+    # cd = response.headers.get('content-disposition')
+    # file_name = get_filename_from_cd(cd)
+    # file_name = "test.mp3"
+    save_path = os.path.join(save_folder, video_title)
+
+    with open(save_path, 'wb') as file:
+        for chunk in response.iter_content(chunk_size=8192):
+            file.write(chunk)
+    
+    print(f"File downloaded and saved to: {save_path}")
+
+get_youtube_url("hong nhan", "C:\\Users\\Dinh Huy\\Music")
 
